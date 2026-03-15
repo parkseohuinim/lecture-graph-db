@@ -1,0 +1,42 @@
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# === Node.js ===
+node_modules/
+
+# === Next.js ===
+.next/
+out/
+
+# === 환경 변수 (API 키 등 민감 정보) ===
+.env
+.env.*
+!.env.example
+
+# === Docker ===
+neo4j_data/
+neo4j_logs/
+
+# === 기타 ===
+*.log
+*.tmp
+.cache/

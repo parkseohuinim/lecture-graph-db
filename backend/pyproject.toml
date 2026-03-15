@@ -1,0 +1,20 @@
+[project]
+name = "investigation-kg-backend"
+version = "0.1.0"
+description = "수사 지식 그래프 백엔드 - LLM + Neo4j"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "neo4j>=5.26.0",
+    "pydantic-settings>=2.6.0",
+    "openai>=1.57.0",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
