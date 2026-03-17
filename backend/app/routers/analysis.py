@@ -97,18 +97,55 @@ async def find_path(from_name: str, to_name: str):
     return result
 
 
-@router.get("/common-locations", summary="같은 날 같은 장소에 있었던 인물 쌍 — 공모 탐지")
+@router.get("/common-locations", summary="같은 날 같은 장소(인근 포함)에 있었던 인물/차량 — 공모 탐지")
 async def find_common_locations():
-    query = """
-    MATCH (p1:Person)-[r1:WAS_AT]->(l:Location)<-[r2:WAS_AT]-(p2:Person)
-    WHERE id(p1) < id(p2)
+    exact_query = """
+    MATCH (n1)-[r1:WAS_AT]->(l:Location)<-[r2:WAS_AT]-(n2)
+    WHERE elementId(n1) < elementId(n2)
       AND r1.date = r2.date
-    RETURN p1.name AS person1, p2.name AS person2,
-           l.name AS location, r1.date AS date,
-           r1.time AS time1, r2.time AS time2
+    RETURN
+      CASE WHEN n1:Person THEN n1.name ELSE n1.plate END AS entity1,
+      labels(n1)[0] AS type1,
+      CASE WHEN n2:Person THEN n2.name ELSE n2.plate END AS entity2,
+      labels(n2)[0] AS type2,
+      l.name AS location, r1.date AS date,
+      r1.time AS time1, r2.time AS time2
     ORDER BY date
     """
-    return await Neo4jDB.execute_query(query)
+    nearby_query = """
+    MATCH (n1)-[r1:WAS_AT]->(l1:Location),
+          (n2)-[r2:WAS_AT]->(l2:Location)
+    WHERE elementId(n1) < elementId(n2)
+      AND elementId(l1) <> elementId(l2)
+      AND r1.date = r2.date
+      AND (l1.name CONTAINS l2.name OR l2.name CONTAINS l1.name
+           OR any(word IN split(l1.name, ' ') WHERE size(word) >= 2 AND l2.name CONTAINS word))
+    RETURN
+      CASE WHEN n1:Person THEN n1.name ELSE n1.plate END AS entity1,
+      labels(n1)[0] AS type1,
+      CASE WHEN n2:Person THEN n2.name ELSE n2.plate END AS entity2,
+      labels(n2)[0] AS type2,
+      l1.name + ' / ' + l2.name AS location, r1.date AS date,
+      r1.time AS time1, r2.time AS time2
+    ORDER BY date
+    """
+    exact = await Neo4jDB.execute_query(exact_query)
+    nearby = await Neo4jDB.execute_query(nearby_query)
+    seen = set()
+    results = []
+    for r in exact:
+        key = (r["entity1"], r["entity2"], r["date"])
+        if key not in seen:
+            r["match_type"] = "same_location"
+            results.append(r)
+            seen.add(key)
+    for r in nearby:
+        key = (r["entity1"], r["entity2"], r["date"])
+        if key not in seen:
+            r["match_type"] = "nearby"
+            results.append(r)
+            seen.add(key)
+    return results
 
 
 @router.get("/timeline/{person_name}", summary="특정 인물의 시간순 행동 궤적")

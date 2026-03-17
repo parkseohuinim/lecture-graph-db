@@ -2,7 +2,16 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f172a;
+  --surface: #f8fafc;
+  --surface-raised: #f1f5f9;
+  --border: #e2e8f0;
+  --border-light: #f1f5f9;
+  --muted: #64748b;
+  --muted-dim: #94a3b8;
+  --accent: #e11d48;
+  --accent-soft: rgba(225, 29, 72, 0.06);
+  --accent-hover: #be123c;
 }
 
 @theme inline {
@@ -12,15 +21,177 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ── Markdown Prose ─────────────────────────────────────── */
+.prose-chat {
+  line-height: 1.8;
+  color: #334155;
+  font-size: 0.875rem;
+}
+
+.prose-chat p {
+  margin-bottom: 0.625em;
+}
+.prose-chat p:last-child {
+  margin-bottom: 0;
+}
+
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3,
+.prose-chat h4 {
+  color: #0f172a;
+  font-weight: 650;
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+.prose-chat h1 { font-size: 1.2rem; }
+.prose-chat h2 { font-size: 1.075rem; }
+.prose-chat h3 { font-size: 0.975rem; }
+.prose-chat h1:first-child,
+.prose-chat h2:first-child,
+.prose-chat h3:first-child {
+  margin-top: 0;
+}
+
+.prose-chat strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.prose-chat em {
+  color: #64748b;
+}
+
+.prose-chat ul, .prose-chat ol {
+  padding-left: 1.25em;
+  margin-bottom: 0.625em;
+}
+.prose-chat ul { list-style-type: disc; }
+.prose-chat ol { list-style-type: decimal; }
+.prose-chat li {
+  margin-bottom: 0.2em;
+}
+.prose-chat li::marker {
+  color: #cbd5e1;
+}
+
+.prose-chat blockquote {
+  border-left: 3px solid #e11d48;
+  padding-left: 1em;
+  margin: 0.75em 0;
+  color: #64748b;
+  font-style: italic;
+}
+
+.prose-chat code {
+  background: #f1f5f9;
+  color: #be123c;
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+  font-size: 0.8em;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  border: 1px solid #e2e8f0;
+}
+
+.prose-chat pre {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.875em 1em;
+  margin: 0.75em 0;
+  overflow-x: auto;
+}
+.prose-chat pre code {
+  background: transparent;
+  color: #475569;
+  padding: 0;
+  border: none;
+  font-size: 0.8em;
+}
+
+.prose-chat table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75em 0;
+  font-size: 0.825rem;
+}
+.prose-chat th {
+  text-align: left;
+  padding: 0.5em 0.75em;
+  border-bottom: 2px solid #e2e8f0;
+  color: #64748b;
+  font-weight: 500;
+  font-size: 0.8rem;
+}
+.prose-chat td {
+  padding: 0.5em 0.75em;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+.prose-chat tr:hover td {
+  background: #f8fafc;
+}
+
+.prose-chat hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1em 0;
+}
+
+.prose-chat a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: #93c5fd;
+}
+.prose-chat a:hover {
+  color: #1d4ed8;
+  text-decoration-color: #2563eb;
+}
+
+/* ── Animations ─────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.25s ease-out both;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
 }

@@ -21,7 +21,7 @@ export const graphApi = {
     request("/graph/nodes", { method: "POST", body: JSON.stringify({ label, properties }) }),
   createRelationship: (data: RelCreate) =>
     request("/graph/relationships", { method: "POST", body: JSON.stringify(data) }),
-  deleteNode: (id: number) => request(`/graph/nodes/${id}`, { method: "DELETE" }),
+  deleteNode: (id: string) => request(`/graph/nodes/${encodeURIComponent(id)}`, { method: "DELETE" }),
   clearAll: () => request("/graph/all", { method: "DELETE" }),
 };
 
@@ -68,14 +68,14 @@ export const samplesApi = {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface GraphNode {
-  id: number;
+  id: string;
   labels: string[];
   props: Record<string, unknown>;
 }
 
 export interface GraphRel {
-  source: number;
-  target: number;
+  source: string;
+  target: string;
   type: string;
   props: Record<string, unknown>;
 }

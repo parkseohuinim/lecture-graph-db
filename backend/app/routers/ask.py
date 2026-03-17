@@ -23,6 +23,19 @@ async def get_graph_schema() -> str:
         RETURN label, collect(DISTINCT key) AS properties
         LIMIT 50
     """)
+    rel_props_result = await Neo4jDB.execute_query("""
+        MATCH ()-[r]->()
+        WITH type(r) AS rel_type, keys(r) AS ks
+        UNWIND ks AS key
+        RETURN rel_type, collect(DISTINCT key) AS properties
+    """)
+    rel_sample_result = await Neo4jDB.execute_query("""
+        MATCH ()-[r]->()
+        WHERE size(keys(r)) > 0
+        WITH type(r) AS rel_type, properties(r) AS props
+        RETURN rel_type, props
+        LIMIT 20
+    """)
 
     labels = labels_result[0]["labels"] if labels_result else []
     rel_types = rel_types_result[0]["types"] if rel_types_result else []
@@ -31,14 +44,46 @@ async def get_graph_schema() -> str:
     for row in props_result:
         props_by_label[row["label"]] = row["properties"]
 
+    rel_props_by_type = {}
+    for row in rel_props_result:
+        rel_props_by_type[row["rel_type"]] = row["properties"]
+
+    rel_samples_by_type: dict[str, list] = {}
+    for row in rel_sample_result:
+        rt = row["rel_type"]
+        if rt not in rel_samples_by_type:
+            rel_samples_by_type[rt] = []
+        if len(rel_samples_by_type[rt]) < 2:
+            rel_samples_by_type[rt].append(row["props"])
+
+    node_values_result = await Neo4jDB.execute_query("""
+        MATCH (n)
+        WHERE n.name IS NOT NULL
+        RETURN labels(n)[0] AS label, collect(DISTINCT n.name) AS names
+    """)
+    node_values_by_label: dict[str, list] = {}
+    for row in node_values_result:
+        node_values_by_label[row["label"]] = row["names"]
+
     lines = ["### 노드 타입"]
     for label in labels:
         props = props_by_label.get(label, [])
-        lines.append(f"- {label}: {', '.join(props)}")
+        line = f"- {label}: {', '.join(props)}"
+        values = node_values_by_label.get(label, [])
+        if values:
+            line += f"\n  실제 name 값: {values[:10]}"
+        lines.append(line)
 
-    lines.append("\n### 관계 타입")
+    lines.append("\n### 관계 타입 (속성 포함)")
     for rt in rel_types:
-        lines.append(f"- {rt}")
+        props = rel_props_by_type.get(rt, [])
+        if props:
+            lines.append(f"- {rt}: {', '.join(props)}")
+            samples = rel_samples_by_type.get(rt, [])
+            for s in samples:
+                lines.append(f"  예시: {s}")
+        else:
+            lines.append(f"- {rt}: (속성 없음)")
 
     return "\n".join(lines)
 
@@ -80,12 +125,12 @@ async def extract_relevant_subgraph(results: list) -> dict:
     nodes_query = """
     MATCH (n)
     WHERE any(name IN $names WHERE n.name = name OR n.number = name OR n.plate = name)
-    RETURN id(n) AS id, labels(n) AS labels, properties(n) AS props
+    RETURN elementId(n) AS id, labels(n) AS labels, properties(n) AS props
     """
     rels_query = """
     MATCH (a)-[r]->(b)
     WHERE any(name IN $names WHERE a.name = name OR b.name = name)
-    RETURN id(a) AS source, id(b) AS target,
+    RETURN elementId(a) AS source, elementId(b) AS target,
            type(r) AS type, properties(r) AS props
     """
     nodes = await Neo4jDB.execute_query(nodes_query, {"names": name_list})

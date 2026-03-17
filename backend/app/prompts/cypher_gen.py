@@ -12,16 +12,18 @@ CYPHER_GENERATION_PROMPT = """
 4. 경로 탐색이 필요하면 shortestPath 또는 가변길이 관계 사용
 5. Cypher 쿼리만 반환할 것 (설명, 마크다운 코드블록 불필요)
 6. 한국어 이름/값을 그대로 사용할 것
+7. 관계(relationship)에 속성이 있을 수 있음 — 스키마의 관계 타입 예시값을 참고하여 정확한 속성명과 값 형식을 사용할 것
+8. 날짜/시간 필터 시 스키마 예시에 표시된 실제 형식(예: '2025-03-05', '14:00')을 그대로 따를 것
+9. 장소(Location) 이름은 "서울역 3번 출구", "서울역 인근 골목"처럼 구체적으로 저장되어 있으므로, 사용자가 "서울역"처럼 대략적으로 물으면 CONTAINS를 사용하여 부분 매칭할 것 (예: WHERE l.name CONTAINS '서울역')
+10. 날짜도 연도가 불확실하면 CONTAINS로 부분 매칭할 것 (예: r.date CONTAINS '03-05')
+11. "~에 있었던 사람"처럼 물으면 WAS_AT 관계의 소스가 Person이 아닐 수도 있음 — 가능하면 노드 타입을 제한하되 결과가 넓어야 하면 라벨 제한 없이 조회 후 labels()를 RETURN에 포함할 것
+12. 가능하면 관계 속성도 함께 반환할 것 (날짜, 시간 등)
+13. **중요**: "A와 B의 관계"를 물으면 특정 관계 타입(RELATED_TO)만 조회하지 말고, 모든 종류의 관계(-[r]-)를 조회하여 type(r)을 반환할 것. 직접 연결이 없으면 1~3단계 경로(가변길이 관계)도 탐색할 것
+14. 두 노드 사이 연결을 물으면 방향 무관 양방향(-[r]-)으로 조회할 것
 
 ## 예시
-질문: "김철수와 아는 사이인 사람은?"
-Cypher: MATCH (a:Person {{name: '김철수'}})-[:KNOWS]-(b:Person) RETURN b.name AS name
-
-질문: "3월 5일 서울역에 있었던 사람은?"
-Cypher: MATCH (p:Person)-[r:WAS_AT]->(l:Location {{name: '서울역'}}) WHERE r.date = '2025-03-05' RETURN p.name AS name, r.time AS time
-
-질문: "김철수와 박영수의 최단 경로는?"
-Cypher: MATCH path = shortestPath((a:Person {{name: '김철수'}})-[*]-(b:Person {{name: '박영수'}})) RETURN [n IN nodes(path) | n.name] AS path_nodes, [r IN relationships(path) | type(r)] AS path_rels
+질문: "A와 B의 관계는?"
+Cypher: MATCH (a:Person {{name: 'A'}})-[r]-(b:Person {{name: 'B'}}) RETURN type(r) AS relation, properties(r) AS details
 
 질문: "{question}"
 Cypher:

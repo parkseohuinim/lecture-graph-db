@@ -21,6 +21,18 @@ async def _call_llm(text: str) -> dict:
     return json.loads(response.choices[0].message.content)
 
 
+LABEL_KEY_MAP = {
+    "Person": "name",
+    "Location": "name",
+    "Vehicle": "plate",
+    "Phone": "number",
+    "Account": "number",
+    "Organization": "name",
+    "Event": "type",
+    "Evidence": "type",
+}
+
+
 async def _save_to_graph(data: dict) -> dict:
     saved_entities = []
     saved_rels = []
@@ -29,10 +41,22 @@ async def _save_to_graph(data: dict) -> dict:
         props = entity["properties"]
         if not props:
             continue
-        prop_str = ", ".join(f"{k}: ${k}" for k in props)
-        query = f"MERGE (n:{entity['label']} {{{prop_str}}}) RETURN n"
+        label = entity["label"]
+        key_prop = LABEL_KEY_MAP.get(label)
+
+        if key_prop and key_prop in props:
+            extra = {k: v for k, v in props.items() if k != key_prop}
+            query = f"MERGE (n:{label} {{{key_prop}: ${key_prop}}})"
+            if extra:
+                set_str = ", ".join(f"n.{k} = ${k}" for k in extra)
+                query += f" ON CREATE SET {set_str} ON MATCH SET {set_str}"
+            query += " RETURN n"
+        else:
+            prop_str = ", ".join(f"{k}: ${k}" for k in props)
+            query = f"MERGE (n:{label} {{{prop_str}}}) RETURN n"
+
         await Neo4jDB.execute_query(query, props)
-        saved_entities.append(f"{entity['label']}: {list(props.values())[0]}")
+        saved_entities.append(f"{label}: {list(props.values())[0]}")
 
     for rel in data.get("relationships", []):
         fn = rel["from_node"]

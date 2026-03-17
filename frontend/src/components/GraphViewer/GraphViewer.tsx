@@ -17,7 +17,6 @@ interface FGNode {
   label: string;
   color: string;
   props: Record<string, unknown>;
-  rawId: number;
 }
 
 interface FGLink {
@@ -42,8 +41,7 @@ export default function GraphViewer() {
       const [graph, s] = await Promise.all([graphApi.getFull(), graphApi.getStats()]);
       setNodes(
         graph.nodes.map((n: GraphNode) => ({
-          id: String(n.id),
-          rawId: n.id,
+          id: n.id,
           name: getNodeName(n.props),
           label: n.labels[0] || "Unknown",
           color: getNodeColor(n.labels),
@@ -52,8 +50,8 @@ export default function GraphViewer() {
       );
       setLinks(
         graph.relationships.map((r: GraphRel) => ({
-          source: String(r.source),
-          target: String(r.target),
+          source: r.source,
+          target: r.target,
           type: r.type,
           props: r.props,
         }))
@@ -66,8 +64,6 @@ export default function GraphViewer() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
   }, [load]);
 
   const handleClear = async () => {
@@ -77,44 +73,44 @@ export default function GraphViewer() {
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-white">
       <div className="flex-1 relative">
-        {/* 상단 툴바 */}
+        {/* Toolbar */}
         <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
-          <div className="bg-gray-900/90 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-            <span className="text-gray-400">노드 </span>
-            <span className="text-white font-bold">{stats.node_count}</span>
-            <span className="text-gray-600 mx-2">|</span>
-            <span className="text-gray-400">관계 </span>
-            <span className="text-white font-bold">{stats.rel_count}</span>
+          <div className="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl px-3.5 py-2 text-[12px] shadow-sm">
+            <span className="text-slate-400">노드 </span>
+            <span className="text-slate-900 font-bold">{stats.node_count}</span>
+            <span className="text-slate-200 mx-2">|</span>
+            <span className="text-slate-400">관계 </span>
+            <span className="text-slate-900 font-bold">{stats.rel_count}</span>
           </div>
           <button
             onClick={load}
             disabled={loading}
-            className="bg-gray-900/90 border border-gray-700 rounded-lg p-2 hover:bg-gray-800 transition-colors"
+            className="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl p-2.5 hover:bg-slate-50 transition-all duration-150 shadow-sm"
           >
-            <RefreshCw className={`w-4 h-4 text-gray-400 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? "animate-spin" : ""}`} />
           </button>
           <button
             onClick={() => setShowForm(true)}
-            className="bg-red-600 hover:bg-red-700 rounded-lg px-3 py-2 text-sm font-medium flex items-center gap-1.5 transition-colors"
+            className="bg-slate-900 hover:bg-slate-800 text-white rounded-xl px-3.5 py-2.5 text-[12px] font-medium flex items-center gap-1.5 transition-all duration-150 shadow-sm"
           >
-            <Plus className="w-4 h-4" /> 노드 추가
+            <Plus className="w-3.5 h-3.5" /> 노드 추가
           </button>
           <button
             onClick={handleClear}
-            className="bg-gray-900/90 border border-gray-700 rounded-lg p-2 hover:bg-red-900/50 hover:border-red-700 transition-colors"
+            className="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl p-2.5 hover:bg-rose-50 hover:border-rose-200 transition-all duration-150 shadow-sm"
           >
-            <Trash2 className="w-4 h-4 text-gray-400" />
+            <Trash2 className="w-3.5 h-3.5 text-slate-400" />
           </button>
         </div>
 
-        {/* 범례 */}
-        <div className="absolute bottom-4 left-4 z-10 bg-gray-900/90 border border-gray-700 rounded-lg p-3">
-          <p className="text-xs text-gray-500 mb-2 font-medium">노드 타입</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+        {/* Legend */}
+        <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl p-3.5 shadow-sm">
+          <p className="text-[10px] text-slate-400 mb-2 font-semibold uppercase tracking-widest">노드 타입</p>
+          <div className="grid grid-cols-2 gap-x-5 gap-y-1.5">
             {Object.entries(NODE_ICONS).map(([label, icon]) => (
-              <div key={label} className="flex items-center gap-1.5 text-xs text-gray-400">
+              <div key={label} className="flex items-center gap-1.5 text-[11px] text-slate-500">
                 <span>{icon}</span>
                 <span>{label}</span>
               </div>
@@ -123,10 +119,10 @@ export default function GraphViewer() {
         </div>
 
         {nodes.length === 0 && !loading && (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-600">
+          <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <p className="text-lg mb-2">그래프가 비어있습니다</p>
-              <p className="text-sm">노드를 추가하거나 문서를 분석해보세요</p>
+              <p className="text-[15px] mb-2 text-slate-400 font-medium">그래프가 비어있습니다</p>
+              <p className="text-[12px] text-slate-400">노드를 추가하거나 문서를 분석해보세요</p>
             </div>
           </div>
         )}
@@ -143,23 +139,28 @@ export default function GraphViewer() {
           nodeCanvasObject={(node, ctx, globalScale) => {
             const n = node as FGNode & { x: number; y: number };
             const r = 6;
+
+            ctx.shadowColor = n.color;
+            ctx.shadowBlur = selected?.id === n.id ? 12 : 4;
             ctx.beginPath();
             ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
             ctx.fillStyle = n.color;
             ctx.fill();
-            ctx.strokeStyle = selected?.id === n.id ? "#fff" : "rgba(255,255,255,0.2)";
-            ctx.lineWidth = selected?.id === n.id ? 2 : 0.5;
+            ctx.shadowBlur = 0;
+
+            ctx.strokeStyle = selected?.id === n.id ? "#0f172a" : "rgba(255,255,255,0.8)";
+            ctx.lineWidth = selected?.id === n.id ? 2.5 : 1;
             ctx.stroke();
 
             const label = n.name;
             const fontSize = Math.max(10 / globalScale, 3);
-            ctx.font = `${fontSize}px sans-serif`;
-            ctx.fillStyle = "rgba(255,255,255,0.85)";
+            ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
+            ctx.fillStyle = "#334155";
             ctx.textAlign = "center";
             ctx.fillText(label, n.x, n.y + r + fontSize);
           }}
           linkLabel={(l) => (l as FGLink).type}
-          linkColor={() => "rgba(156,163,175,0.5)"}
+          linkColor={() => "rgba(148,163,184,0.4)"}
           linkDirectionalArrowLength={4}
           linkDirectionalArrowRelPos={1}
           linkCanvasObjectMode={() => "after"}
@@ -168,14 +169,14 @@ export default function GraphViewer() {
             if (!l.source?.x) return;
             const mx = (l.source.x + l.target.x) / 2;
             const my = (l.source.y + l.target.y) / 2;
-            ctx.font = "3px sans-serif";
-            ctx.fillStyle = "rgba(156,163,175,0.8)";
+            ctx.font = "3px system-ui, sans-serif";
+            ctx.fillStyle = "rgba(100,116,139,0.7)";
             ctx.textAlign = "center";
             ctx.fillText(l.type, mx, my);
           }}
           onNodeClick={(n) => setSelected(n as FGNode)}
-          backgroundColor="#030712"
-          width={typeof window !== "undefined" ? window.innerWidth - 224 - (selected ? 320 : 0) : 800}
+          backgroundColor="#ffffff"
+          width={typeof window !== "undefined" ? window.innerWidth - 232 - (selected ? 340 : 0) : 800}
         />
       </div>
 
@@ -184,7 +185,7 @@ export default function GraphViewer() {
           node={selected}
           onClose={() => setSelected(null)}
           onDelete={async () => {
-            await graphApi.deleteNode(selected.rawId);
+            await graphApi.deleteNode(selected.id);
             setSelected(null);
             load();
           }}

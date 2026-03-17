@@ -1010,7 +1010,7 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx   ← 본인의 키를 붙여넣기!
 | Neo4j | 실행 중 | `http://localhost:7474` 접속 |
 | 라이브러리 | 설치 완료 | `uv pip list`에서 fastapi, neo4j 확인 |
 | .env | 설정 완료 | OPENAI_API_KEY 값이 들어있는지 확인 |
-| 백엔드 서버 | ⏳ 아직! | 3.2~3.4에서 코드를 짠 후 실행합니다 |
+| 백엔드 서버 | 아직! | 3.2~3.4에서 코드를 짠 후 실행합니다 |
 
 ### 3.2 Neo4j 연결 모듈
 
@@ -1064,6 +1064,25 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx   ← 본인의 키를 붙여넣기!
 > - `DELETE /nodes/{id}` — 특정 노드 삭제
 > - `DELETE /all` — 전체 데이터 삭제
 > - `GET /stats` — 통계 (노드 몇 개, 관계 몇 개)
+> - `GET /duplicates` — 중복 노드 탐지 (같은 식별키를 가진 노드 확인)
+> - `POST /merge-duplicates` — 중복 노드 병합 (관계 이전 후 삭제)
+>
+> **MERGE 동작 방식 — 노드 타입별 식별 키(Primary Key):**
+>
+> `MERGE`는 **모든 속성이 아닌 식별 키만**으로 기존 노드를 매칭하고, 나머지 속성은 `ON CREATE SET`/`ON MATCH SET`으로 업데이트합니다. 이렇게 하면 같은 인물이 다른 문서에서 속성이 조금 다르게 추출되더라도 중복 노드가 생기지 않습니다.
+>
+> | 노드 타입 | 식별 키 | 예시 |
+> |-----------|---------|------|
+> | Person | `name` | `MERGE (n:Person {name: '김철수'}) ON MATCH SET n.role = '용의자'` |
+> | Location | `name` | |
+> | Vehicle | `plate` | |
+> | Phone | `number` | |
+> | Account | `number` | |
+> | Organization | `name` | |
+> | Event | `type` | |
+> | Evidence | `type` | |
+>
+> **주의:** Neo4j 5.x부터 `id()` 함수가 deprecated되어 `elementId()`를 사용합니다. `elementId()`는 문자열을 반환합니다.
 
 > `backend/app/main.py`에서 하는 일:
 > - lifespan: 서버 시작 시 Neo4j에 연결, 종료 시 연결 해제
@@ -1085,6 +1104,93 @@ uv run run.py
 
 브라우저에서 `http://localhost:8000/docs`에 접속해 보세요. **Swagger UI**라는 API 문서 화면이 나타납니다. 여기서 우리가 만든 API들을 바로 테스트할 수 있습니다!
 
+**Swagger UI로 API 직접 테스트하기:**
+
+> 프론트엔드를 실행하기 전에, 우리가 만든 백엔드 API가 정말 동작하는지 **Swagger에서 직접 확인**해 봅시다.
+> 각 API 카드를 펼치고 → **"Try it out"** 버튼 → 값 입력 → **"Execute"** 순서로 진행합니다.
+
+**① 노드 생성 — `POST /graph/nodes`**
+
+용의자 김철수를 만들어 봅시다. Request body에 아래 JSON을 입력하고 Execute:
+
+```json
+{
+  "label": "Person",
+  "properties": {"name": "김철수", "role": "용의자", "age": 35}
+}
+```
+
+> 응답(Response body)에 `"created": [...]`가 보이면 성공! 김철수 노드가 Neo4j에 저장되었습니다.
+
+장소도 하나 만들어 봅시다:
+
+```json
+{
+  "label": "Location",
+  "properties": {"name": "서울역", "type": "교통시설"}
+}
+```
+
+**② 노드 조회 — `GET /graph/nodes`**
+
+Execute만 누르면 됩니다 (입력값 없음).
+
+> 방금 만든 김철수와 서울역이 목록에 보이나요? `labels`에 `["Person"]`, `["Location"]`이 보이고, `props`에 이름과 속성이 들어있으면 정상입니다!
+
+**③ 관계 생성 — `POST /graph/relationships`**
+
+김철수가 서울역에 있었다는 관계를 만듭니다:
+
+```json
+{
+  "from_label": "Person",
+  "from_key": "name",
+  "from_value": "김철수",
+  "to_label": "Location",
+  "to_key": "name",
+  "to_value": "서울역",
+  "rel_type": "WAS_AT",
+  "properties": {"date": "2025-03-05", "time": "22:00"}
+}
+```
+
+> `"created": [{"type": "WAS_AT", ...}]`가 응답에 보이면 성공! 김철수→서울역 관계가 만들어졌습니다.
+>
+> **각 필드의 의미:**
+> - `from_label`, `from_key`, `from_value`: 출발 노드를 찾는 조건 ("Person 중 name이 김철수인 노드")
+> - `to_label`, `to_key`, `to_value`: 도착 노드를 찾는 조건
+> - `rel_type`: 관계 종류 (WAS_AT = "있었다")
+> - `properties`: 관계에 붙는 추가 정보 (날짜, 시간)
+
+**④ 전체 그래프 조회 — `GET /graph/full`**
+
+```json
+// 응답 예시 (일부):
+{
+  "nodes": [
+    {"id": "4:abc123:0", "labels": ["Person"], "props": {"name": "김철수", "role": "용의자", "age": 35}},
+    {"id": "4:abc123:1", "labels": ["Location"], "props": {"name": "서울역", "type": "교통시설"}}
+  ],
+  "relationships": [
+    {"source": "4:abc123:0", "target": "4:abc123:1", "type": "WAS_AT", "props": {"date": "2025-03-05", "time": "22:00"}}
+  ]
+}
+```
+
+> `nodes` 배열에 2개, `relationships` 배열에 1개가 보이면 완벽합니다!
+> **참고:** `id`가 `"4:abc123:0"` 같은 문자열로 나오는 것이 정상입니다. Neo4j 5.x의 `elementId()` 형식입니다.
+
+**⑤ 통계 — `GET /graph/stats`**
+
+> `{"node_count": 2, "rel_count": 1}`이 나오면 우리 API가 모두 정상 동작하는 겁니다!
+
+**⑥ 전체 삭제 — `DELETE /graph/all`**
+
+> 테스트 데이터를 정리합니다. 프론트엔드에서 처음부터 깨끗하게 시작하기 위해 초기화합니다.
+> `{"message": "전체 그래프 초기화 완료"}`가 나오면 성공!
+
+---
+
 **프론트엔드 실행 (새 터미널을 열어주세요):**
 
 ```bash
@@ -1104,7 +1210,7 @@ npm run dev      # 프론트엔드 서버 실행
 | 터미널 2 | `npm run dev` | `http://localhost:3000` → 수사 관계도 화면 |
 | (백그라운드) | `docker compose up -d` | `http://localhost:7474` → Neo4j Browser |
 
-> **체크포인트 ①**: Swagger UI(`http://localhost:8000/docs`)에서 "Try it out" 버튼을 눌러 노드를 추가해보세요. 그런 다음 프론트엔드(`http://localhost:3000`)에서 수사 관계도에 시각화되는지 확인!
+> **체크포인트 ①**: Swagger UI에서 노드 생성/조회/관계 생성/통계를 모두 테스트했고, 프론트엔드(`http://localhost:3000`)에서 수사 관계도가 시각화되면 성공!
 >
 > [뒤처진 경우] `cp -r backend/checkpoints/session3_complete/app/* backend/app/`
 
@@ -1267,9 +1373,23 @@ LLM으로 초벌 추출 → 화면에서 사람이 확인/수정 → 확정 후 
 ### 4.6 엔티티 정규화 전략
 
 - **문제**: "김철수", "철수", "용의자 A", "회색 코트 남성" → 동일 인물?
-- **LLM 레벨**: 프롬프트에 "동일 인물로 판단되면 대표 이름 사용" 지시
-- **DB 레벨**: `MERGE`로 동일 속성이면 기존 노드에 매칭
-- **고도화**: 별도 Entity Resolution 파이프라인 (오늘은 간단 버전)
+
+**3단계 방어:**
+
+1. **LLM 레벨 (프롬프트):**
+   - "동일 인물로 판단되면 풀네임으로 통일하라" 지시
+   - "이정민", "정민", "이 씨" → 모두 `name: "이정민"`으로 통합, 약칭은 `alias`에 기록
+   - entities 배열에 같은 식별자가 두 번 나오지 않도록 명시적으로 금지
+
+2. **DB 레벨 (MERGE 키 속성):**
+   - `MERGE`가 **식별 키(name, plate, number)만**으로 매칭
+   - `{name: '이정민'}`과 `{name: '이정민', alias: '서울시 관악구 거주'}`가 같은 노드로 통합됨
+   - 나머지 속성은 `ON MATCH SET`으로 덮어쓰기
+
+3. **사후 정리 (중복 병합 API):**
+   - `GET /graph/duplicates`로 중복 노드 탐지
+   - `POST /graph/merge-duplicates`로 관계 이전 + 속성 병합 + 중복 삭제
+   - 고도화: 별도 Entity Resolution 파이프라인 + 벡터 유사도
 
 ---
 
@@ -1294,6 +1414,23 @@ LLM으로 초벌 추출 → 화면에서 사람이 확인/수정 → 확정 후 
 > `backend/app/prompts/extraction.py`에서 만드는 것:
 > - `EXTRACTION_SYSTEM_PROMPT`: AI에게 "너는 수사 분석관이다. 텍스트에서 인물, 장소, 관계를 추출하라"고 지시하는 프롬프트
 > - Few-shot 예시 2개: "이런 텍스트가 들어오면 이런 JSON을 반환해라"는 예시
+>
+> **프롬프트에 포함되는 핵심 규칙들:**
+>
+> 1. **Person의 `role` 속성은 필수:**
+>    - `role`은 빈 값 없이 항상 부여해야 함
+>    - 부여 기준: 피해자(피해 당사자), 용의자(혐의·정황), 목격자(진술·신고), 관계인(그 외)
+>    - 문서에서 직접 언급되지 않아도 맥락에서 추론 가능하면 부여
+>
+> 2. **엔티티 해소(Entity Resolution) 규칙:**
+>    - "이정민", "정민이", "이 씨" → `name: "이정민"`, 약칭은 `alias`로
+>    - "서울역 3번 출구", "서울역 부근" → 맥락이 다르면 각각 생성, 같으면 통합
+>    - 동일 entities 배열에 같은 label + 같은 식별자(name/plate/number)의 엔티티 중복 금지
+>
+> 3. **관계 방향 규칙 (from → to):**
+>    - 프롬프트에 허용된 관계 타입과 방향을 명시적으로 정의
+>    - 예: `OWNS: Person → Vehicle/Phone/Account/Organization`, `WORKS_FOR: Person → Organization`, `WAS_AT: Person/Vehicle → Location`
+>    - 방향이 뒤바뀌면 그래프 탐색(경로 찾기 등)이 실패할 수 있으므로 정확한 방향이 중요
 
 ### 5.3 추출 엔드포인트 구현
 
@@ -1321,7 +1458,55 @@ LLM으로 초벌 추출 → 화면에서 사람이 확인/수정 → 확정 후 
 
 > `backend/app/main.py` — extract 라우터 추가 (graph, extract, samples)
 
-### 5.4 수사 자료 투입 + 그래프 성장 관찰
+### 5.4 Swagger에서 LLM 추출 테스트하기
+
+> 프론트엔드로 넘어가기 전에, 우리가 만든 추출 API가 정말 동작하는지 **Swagger에서 직접 확인**해 봅시다.
+> `http://localhost:8000/docs`에서 **extraction** 섹션을 펼쳐보세요.
+
+**① 추출 미리보기 — `POST /extract/analyze`**
+
+문서 1(목격자 진술서)의 텍스트를 넣어봅니다. Request body:
+
+```json
+{
+  "text": "진술자: 이영희 (여, 42세, 서울역 인근 거주)\n일시: 2025년 3월 6일 오전 10시 (사건 다음날)\n\n2025년 3월 5일 밤 10시경, 서울역 3번 출구 앞을 지나가고 있었습니다. 그때 검은색 SUV(번호판 12가 3456)가 정차해 있었고, 차에서 남성 2명이 내렸습니다. 한 명은 키 180cm 정도에 회색 코트를 입고 있었고, 다른 한 명은 검은 패딩 차림이었습니다. 회색 코트를 입은 남성은 제가 뉴스에서 본 김철수라는 사람과 닮았습니다."
+}
+```
+
+> **응답을 살펴보세요!** AI가 텍스트를 분석해서 아래와 같은 JSON을 반환합니다:
+>
+> - `entities` 배열: 이영희(Person), 김철수(Person), 서울역 3번 출구(Location), 12가 3456(Vehicle) 등
+> - `relationships` 배열: 이영희 -[WAS_AT]-> 서울역, 김철수 -[WAS_AT]-> 서울역 등
+>
+> **이것이 바로 "LLM이 텍스트에서 정보를 추출하는 것"입니다!** 이 단계에서는 저장되지 않고 미리보기만 합니다.
+
+**② 추출 + 즉시 저장 — `POST /extract/analyze-and-save`**
+
+같은 텍스트를 넣되, 이번에는 추출과 동시에 Neo4j에 저장합니다:
+
+```json
+{
+  "text": "진술자: 이영희 (여, 42세, 서울역 인근 거주)\n일시: 2025년 3월 6일 오전 10시 (사건 다음날)\n\n2025년 3월 5일 밤 10시경, 서울역 3번 출구 앞을 지나가고 있었습니다. 그때 검은색 SUV(번호판 12가 3456)가 정차해 있었고, 차에서 남성 2명이 내렸습니다. 한 명은 키 180cm 정도에 회색 코트를 입고 있었고, 다른 한 명은 검은 패딩 차림이었습니다. 회색 코트를 입은 남성은 제가 뉴스에서 본 김철수라는 사람과 닮았습니다."
+}
+```
+
+> 응답의 `saved` 부분을 확인하세요:
+> - `saved_entities`: `["Person: 이영희", "Person: 김철수", "Location: 서울역 3번 출구", ...]`
+> - `saved_relationships`: `["이영희 -[WAS_AT]-> 서울역 3번 출구", ...]`
+>
+> **이 정보들이 실제로 Neo4j에 저장되었습니다!**
+
+**③ 그래프가 커졌는지 확인 — `GET /graph/stats`**
+
+> 노드와 관계 수가 늘어났나요? 문서 한 건에서 이만큼의 구조화된 데이터가 자동 추출되었습니다!
+
+**④ 전체 그래프 확인 — `GET /graph/full`**
+
+> 추출된 노드와 관계들이 실제로 들어있는지 눈으로 확인해 보세요.
+
+> **Swagger에서 확인했으면** `DELETE /graph/all`로 초기화한 후, 프론트엔드에서 6건을 순서대로 넣어보며 그래프가 성장하는 과정을 관찰합시다.
+
+### 5.5 수사 자료 투입 + 그래프 성장 관찰
 
 > 이제 진짜 수사 보고서를 넣어봅니다! AI가 각 문서에서 정보를 추출하고, 그래프가 점점 풍부해지는 과정을 눈으로 확인하세요.
 >
@@ -1430,6 +1615,11 @@ LLM으로 초벌 추출 → 화면에서 사람이 확인/수정 → 확정 후 
 >    - `{schema}`: 현재 그래프에 어떤 노드/관계가 있는지 자동으로 채워짐
 >    - `{question}`: 사용자의 질문이 채워짐
 >    - Cypher 예시 3개를 포함해서 AI가 패턴을 학습하도록 함
+>    - **추가 규칙:**
+>      - 장소 검색 시 `l.name CONTAINS '서울역'` 패턴 사용 (DB에 "서울역 3번 출구", "서울역 인근 골목" 등 구체적 이름이 저장되어 있으므로)
+>      - "A와 B의 관계" 질문 시 특정 관계 타입(`RELATED_TO`) 대신 **모든 관계** `-[r]-`로 탐색하고 `type(r)`, `properties(r)` 반환
+>      - 직접 관계가 없으면 다중 홉 경로 탐색 (`shortestPath`)
+>      - 날짜 필터링 시 `CONTAINS` 사용 (날짜 형식 불일치 대응)
 >
 > 2. **ANSWER_GENERATION_PROMPT** — "DB 결과를 바탕으로 자연어 답변을 생성하라"
 >    - `{question}`: 원래 질문
@@ -1461,12 +1651,84 @@ LLM으로 초벌 추출 → 화면에서 사람이 확인/수정 → 확정 후 
 > `backend/app/routers/ask.py`에서 만드는 API들:
 > - `POST /question` — 자연어 질문을 받아서 답변 + 서브그래프 반환
 > - `GET /schema` — 현재 그래프 스키마(구조) 조회
+>
+> **스키마 함수(`get_graph_schema`) 고도화:**
+>
+> AI가 정확한 Cypher를 생성하려면 **현재 그래프에 어떤 데이터가 실제로 있는지** 알아야 합니다. 기본 스키마(노드 타입, 관계 타입)만 제공하면 AI가 존재하지 않는 속성이나 값을 사용할 수 있으므로, 스키마에 다음 정보를 추가합니다:
+>
+> - **관계 속성 + 예시 값**: `WAS_AT` 관계에 `date: "2025-03-05"`, `time: "22:00"` 같은 속성이 있다는 것
+> - **실제 노드 이름 목록**: `Person` 노드에 "김철수", "박영수", "이정민" 등이 존재한다는 것
+> - 이 정보 덕분에 AI가 `{name: '서울역'}` 대신 `CONTAINS '서울역'`을 사용하는 등 더 정확한 Cypher를 생성
 
 > `backend/app/main.py` — ask 라우터 추가 (graph, extract, ask, samples)
 
-### 6.4 수사 질의 시연
+### 6.4 Swagger에서 질의응답 테스트하기
 
-> 이제 만든 시스템을 직접 사용해 봅시다! 프론트엔드 챗 인터페이스(`http://localhost:3000/chat`)를 열고, 아래 질문을 하나씩 입력해 보세요.
+> 프론트엔드 채팅으로 넘어가기 전에, 우리가 만든 질의응답 API의 동작 과정을 **Swagger에서 직접 확인**해 봅시다.
+> `http://localhost:8000/docs`에서 **qa** 섹션을 펼쳐보세요.
+>
+> **주의**: 이 테스트 전에 세션 5에서 수사 자료가 Neo4j에 저장되어 있어야 합니다! `GET /graph/stats`로 데이터가 있는지 먼저 확인하세요.
+
+**① 현재 그래프 스키마 확인 — `GET /ask/schema`**
+
+Execute를 누르면, AI가 Cypher를 만들 때 참고하는 **현재 그래프의 구조**가 반환됩니다:
+
+```
+### 노드 타입
+- Person: name, role, age, alias, description
+- Location: name, type, address
+- Vehicle: plate, color, model
+...
+
+### 관계 타입 (속성 예시 포함)
+- KNOWS (since: '2020')
+- WAS_AT (date: '2025-03-05', time: '22:00')
+- OWNS
+- CALLED (count: 7, date: '2025-03-05')
+...
+
+### 실제 존재하는 이름
+- Person: 김철수, 박영수, 이정민, 이영희, 최민호, ...
+- Location: 서울역 3번 출구, 서울역 인근 골목, 강남카페, 인천항, ...
+- Organization: ㈜한성물류
+```
+
+> 이 스키마가 AI에게 "지금 그래프에 이런 데이터가 있어"라고 알려주는 역할을 합니다.
+> **관계 속성 예시와 실제 이름 목록**이 포함되어 있어, AI가 더 정확한 Cypher를 생성합니다.
+> 스키마가 비어있다면 세션 5에서 수사 자료 투입이 필요합니다!
+
+**② 자연어 질문하기 — `POST /ask/question`**
+
+간단한 질문부터 시작합니다. Request body:
+
+```json
+{
+  "question": "3월 5일 서울역에 있었던 사람은 누구인가?"
+}
+```
+
+> **응답을 자세히 살펴보세요! 네 가지 정보가 반환됩니다:**
+>
+> - `answer`: AI가 생성한 자연어 답변 (수사관 브리핑 톤)
+> - `cypher_used`: AI가 자동 생성한 Cypher 쿼리 — **세션 2에서 배운 Cypher가 보이시나요?**
+> - `raw_results`: Neo4j에서 실행한 쿼리의 원본 결과
+> - `evidence_subgraph`: 답변의 근거가 되는 노드/관계 (프론트엔드에서 시각화에 사용)
+>
+> **핵심**: 여러분이 한국어로 질문했을 뿐인데, AI가 Cypher를 만들고 → Neo4j에서 실행하고 → 결과를 자연어로 답변한 것입니다!
+
+조금 더 복잡한 질문도 시도해 보세요:
+
+```json
+{
+  "question": "김철수와 박영수의 관계는 무엇인가?"
+}
+```
+
+> `cypher_used` 필드에서 AI가 어떤 Cypher를 만들었는지 확인해 보세요. `MATCH`, `shortestPath` 같은 세션 2에서 배운 문법이 보일 겁니다!
+
+### 6.5 프론트엔드에서 수사 질의 시연
+
+> 이제 프론트엔드 챗 인터페이스(`http://localhost:3000/chat`)를 열고, 아래 질문을 하나씩 입력해 보세요.
 
 **직접 질문해 보세요 (쉬운 것부터 어려운 것까지):**
 
@@ -1527,6 +1789,73 @@ LLM으로 초벌 추출 → 화면에서 사람이 확인/수정 → 확정 후 
 
 좋은 소식! Neo4j는 위 알고리즘들을 **내장 라이브러리(GDS)** 로 제공합니다. 복잡한 수학을 직접 구현할 필요 없이, Cypher 한 줄로 실행할 수 있습니다.
 
+**GDS 코드 패턴 이해하기 — `analysis.py` 코드 해설:**
+
+코드에서 GDS 알고리즘은 공통된 패턴을 따릅니다. 하나씩 뜯어보겠습니다.
+
+**① 공통 구조 — `CALL gds.<알고리즘>.stream({...})`**
+
+```cypher
+CALL gds.betweenness.stream({
+    nodeProjection: 'Person',
+    relationshipProjection: {
+        ALL: { type: '*', orientation: 'UNDIRECTED' }
+    }
+})
+YIELD nodeId, score
+RETURN gds.util.asNode(nodeId).name AS name, round(score, 4) AS score
+ORDER BY score DESC
+```
+
+| 구성 요소 | 의미 | 비유 |
+|-----------|------|------|
+| `CALL gds.<알고리즘>.stream(...)` | GDS 알고리즘을 **스트림 모드**로 실행 (결과를 바로 반환) | "이 분석을 실행하고 결과를 한 줄씩 돌려줘" |
+| `nodeProjection: 'Person'` | 분석 대상 **노드 라벨** 지정 — Person 노드만 분석 | "분석 대상은 '사람'만" |
+| `relationshipProjection` | 분석에 사용할 **관계 설정** | "어떤 관계를 따라갈지" |
+| `type: '*'` | 모든 종류의 관계를 포함 (KNOWS, CALLED, WAS_AT 등) | "종류 가리지 않고 연결된 건 다 본다" |
+| `orientation: 'UNDIRECTED'` | 방향 무시 — A→B이든 B→A이든 같은 연결로 취급 | "누가 먼저 연락했든 '아는 사이'로 본다" |
+| `YIELD nodeId, score` | 알고리즘 결과에서 필요한 컬럼만 꺼냄 | "결과 중 노드 ID와 점수만 가져와" |
+| `gds.util.asNode(nodeId)` | 내부 노드 ID를 실제 노드 객체로 변환 | "번호표를 이름으로 바꿔줘" |
+
+> **스트림 모드 vs 쓰기 모드**: `.stream()`은 결과를 읽기만 하고 그래프를 변경하지 않습니다. `.write()`를 쓰면 결과를 노드 속성으로 저장할 수 있지만, 이 강의에서는 실시간 조회용 `.stream()`만 사용합니다.
+
+**② Betweenness Centrality — 매개 중심성**
+
+```cypher
+CALL gds.betweenness.stream({...})
+YIELD nodeId, score
+```
+
+- **하는 일**: 모든 노드 쌍의 최단 경로를 계산하고, 특정 노드가 그 경로 위에 얼마나 자주 등장하는지 `score`로 반환
+- **score가 높으면**: 이 사람을 빼면 다른 사람들 사이의 연결이 끊어진다 → **정보 브로커 / 연락책**
+- **수사 활용**: score 1위 = "이 사람이 없으면 조직이 분리된다" → 검거 우선순위
+
+**③ PageRank — 영향력 순위**
+
+```cypher
+CALL gds.pageRank.stream({...})
+YIELD nodeId, score
+```
+
+- **하는 일**: Google 검색 순위의 원리 — "중요한 노드가 가리키는 노드도 중요하다"를 재귀적으로 계산
+- **score(rank)가 높으면**: 많은 사람과 연결되었을 뿐 아니라, **영향력 있는 사람**과 연결된 인물
+- **Degree Centrality와의 차이**: Degree는 단순히 연결 수만 셈. PageRank는 "누구와 연결되었는가"의 **질**도 고려
+- **수사 활용**: "단순히 아는 사람이 많은 게 아니라, 핵심 인물들과 연결된 진짜 실세"
+
+**④ Louvain — 커뮤니티 탐지**
+
+```cypher
+CALL gds.louvain.stream({...})
+YIELD nodeId, communityId
+```
+
+- **하는 일**: 그래프에서 "서로 긴밀하게 연결된 그룹"을 자동으로 찾아서 같은 `communityId`를 부여
+- **알고리즘 원리**: 모듈성(modularity)을 최대화하는 방향으로 노드를 반복적으로 그룹핑 — "그룹 내부 연결은 많고, 그룹 간 연결은 적게"
+- **communityId**: 같은 번호를 받은 사람들 = 한 그룹 (번호 자체는 의미 없음, 같은지 다른지만 중요)
+- **수사 활용**: 공범 조직 자동 식별 — "이 3명이 한 패, 저 2명이 한 패"
+
+> **GDS 미설치 시**: `analysis.py`에서 GDS 호출 실패 시 `503 에러`를 반환하도록 try-except로 감싸져 있습니다. Degree Centrality(`/centrality`)만 순수 Cypher로 동작하므로 GDS 없이도 사용 가능합니다.
+
 ### 7.2 GDS 기반 분석 API 구현
 
 > [라이브 코딩] | 파일: `backend/app/routers/analysis.py` (신규 생성) → `backend/app/main.py` (라우터 추가)
@@ -1542,15 +1871,122 @@ LLM으로 초벌 추출 → 화면에서 사람이 확인/수정 → 확정 후 
 > | `GET /pagerank` | PageRank | "영향력 순위" |
 > | `GET /communities` | 커뮤니티 탐지 | "누가 한 패인가?" |
 > | `GET /path/{from}/{to}` | 최단 경로 | "A에서 B까지 어떻게 연결?" |
-> | `GET /common-locations` | 공통 장소 분석 | "같은 날 같은 장소에 있었던 의심 쌍" |
+> | `GET /common-locations` | 공통 장소 분석 | "같은 날 같은/인근 장소에 있었던 의심 쌍 (인물 + 차량)" |
 > | `GET /timeline/{person}` | 행동 타임라인 | "이 사람이 언제 어디에 있었나?" |
 > | `GET /suspicious-connections` | 의심 연결 | "피해자 2단계 이내 연결 인물" |
+>
+> **common-locations 고도화:**
+> - Person뿐 아니라 **Vehicle(차량)** 노드도 탐색 대상에 포함 (차량도 `WAS_AT` 관계를 가짐)
+> - **인근 장소 매칭**: "서울역 3번 출구"와 "서울역 인근 골목"처럼 정확히 같은 장소가 아니더라도 이름에 공통 키워드가 포함되면 "nearby" 매칭으로 탐지
+> - 응답에 `match_type` 필드 추가: `"same_location"` (정확히 같은 장소) 또는 `"nearby"` (인근 장소)
+>
+> **주의:** 모든 분석 쿼리에서 `id()` 대신 `elementId()`를 사용합니다.
 >
 > ※ GDS 라이브러리가 설치되지 않은 환경에서는 betweenness, pagerank, communities API가 503 에러를 반환하며, 기본 Cypher 기반 centrality는 항상 동작합니다.
 
 > `backend/app/main.py` — analysis 라우터 추가 (graph, extract, ask, analysis, samples) — **최종 완성!**
 
-### 7.3 프론트엔드에서 분석 결과 확인
+### 7.3 Swagger에서 분석 API 테스트하기
+
+> 프론트엔드 대시보드로 넘어가기 전에, 각 분석 API의 결과를 **Swagger에서 직접 확인**해 봅시다.
+> `http://localhost:8000/docs`에서 **analysis** 섹션을 펼쳐보세요.
+
+**① 연결 중심성 — `GET /analysis/centrality`**
+
+Execute를 누르면 **관계가 가장 많은 인물 순위**가 나옵니다:
+
+```json
+// 응답 예시:
+[
+  {"name": "박영수", "role": "용의자", "degree": 8},
+  {"name": "김철수", "role": "용의자", "degree": 6},
+  {"name": "이정민", "role": "관계인", "degree": 5},
+  {"name": "최민호", "role": "피해자", "degree": 4},
+  ...
+]
+```
+
+> 박영수가 1위인가요? 그만큼 많은 사람/장소/조직과 연결되어 있다는 뜻입니다. **수사에서는 이런 허브 인물이 핵심입니다!**
+> **참고:** `role`에 "피해자", "용의자", "목격자", "관계인" 등이 채워져 있어야 정상입니다. 비어있다면 추출 프롬프트에서 `role`이 필수로 설정되지 않은 것이므로 세션 5의 프롬프트를 확인하세요.
+
+**② 최단 경로 — `GET /analysis/path/{from_name}/{to_name}`**
+
+URL 파라미터에 두 인물의 이름을 입력합니다:
+- `from_name`: `김철수`
+- `to_name`: `최민호`
+
+```json
+// 응답 예시:
+[{
+  "path_nodes": ["김철수", "박영수", "최민호"],
+  "path_rels": ["KNOWS", "KNOWS"],
+  "hops": 2
+}]
+```
+
+> 김철수와 피해자 최민호가 **2단계**로 연결되어 있군요! 중간에 박영수가 있습니다. 이것이 "경로 탐색"의 힘입니다.
+
+**③ 공통 장소 — `GET /analysis/common-locations`**
+
+같은 날 같은/인근 장소에 있었던 인물·차량 쌍을 자동으로 찾아줍니다:
+
+```json
+// 응답 예시:
+[
+  {
+    "entity1": "김철수", "type1": "Person",
+    "entity2": "이영희", "type2": "Person",
+    "location": "서울역 3번 출구",
+    "date": "2025-03-05", "time1": "22:00", "time2": "22:00",
+    "match_type": "same_location"
+  },
+  {
+    "entity1": "김철수", "type1": "Person",
+    "entity2": "최민호", "type2": "Person",
+    "location": "서울역 3번 출구 / 서울역 인근 골목",
+    "date": "2025-03-05", "time1": "22:00", "time2": null,
+    "match_type": "nearby"
+  },
+  {
+    "entity1": "12가 3456", "type1": "Vehicle",
+    "entity2": "최민호", "type2": "Person",
+    "location": "서울역 3번 출구 / 서울역 인근 골목",
+    "date": "2025-03-05", "time1": "21:55", "time2": null,
+    "match_type": "nearby"
+  }
+]
+```
+
+> **`match_type`에 주목하세요!** `same_location`은 정확히 같은 장소, `nearby`는 이름에 공통 키워드("서울역")가 포함된 인근 장소입니다.
+> 차량(12가 3456)도 인물과 함께 탐지되어, 사건 당일 서울역 일대에 김철수·최민호·용의 차량이 모두 있었음을 확인할 수 있습니다. **공모 탐지**의 핵심 데이터입니다.
+
+**④ 행동 타임라인 — `GET /analysis/timeline/{person_name}`**
+
+`person_name`에 `김철수` 입력:
+
+```json
+// 응답 예시:
+[
+  {"action": "WAS_AT", "target": "서울역", "date": "2025-03-05", "time": "22:00", "target_type": "Location"},
+  {"action": "CALLED", "target": "박영수", "date": "2025-03-05", "time": "23:45", "target_type": "Person"}
+]
+```
+
+> 김철수의 행동을 시간순으로 볼 수 있습니다. "22시에 서울역, 23:45에 박영수와 통화" — 사건 당일의 행적이 보이시나요?
+
+**⑤ 피해자 연결 인물 — `GET /analysis/suspicious-connections`**
+
+```json
+// 응답 예시:
+[
+  {"victim": "최민호", "suspect": "박영수", "distance": 1, "connection_types": ["KNOWS"]},
+  {"victim": "최민호", "suspect": "김철수", "distance": 2, "connection_types": ["KNOWS", "KNOWS"]}
+]
+```
+
+> 피해자 최민호와 2단계 이내로 연결된 모든 인물이 표시됩니다. 가까울수록 의심도 높아집니다!
+
+### 7.4 프론트엔드에서 분석 결과 확인
 
 **프론트엔드 분석 대시보드(`http://localhost:3000/analysis`)에서 제공하는 화면:**
 
