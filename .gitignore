@@ -41,7 +41,6 @@ neo4j_logs/
 backend/**
 !backend/
 !backend/app/
-!backend/app/main.py
 !backend/pyproject.toml
 !backend/run.py
 !backend/.env.example
