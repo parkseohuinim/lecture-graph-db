@@ -36,6 +36,22 @@ out/
 neo4j_data/
 neo4j_logs/
 
+# === Backend 실습 코드 (라이브 코딩용) ===
+# 기본은 전부 ignore하고, 실습 진행에 필요한 파일만 예외로 둡니다.
+backend/**
+!backend/
+!backend/app/
+!backend/app/main.py
+!backend/pyproject.toml
+!backend/run.py
+!backend/.env.example
+!backend/data/
+!backend/data/documents/
+!backend/data/documents/**
+
+# === 강의 자료 ===
+*.pptx
+
 # === 기타 ===
 *.log
 *.tmp
